@@ -2,7 +2,7 @@ use fuser::{FileAttr, FileType};
 use jwalk::WalkDir;
 use log::{info, warn};
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -58,9 +58,9 @@ impl Metadata {
 pub struct LayerM {
     pub backend_root: PathBuf,
     next_ino: AtomicU64,
-    pub inodes: HashMap<Inode, Metadata>,
-    pub children: HashMap<Inode, Vec<Inode>>,
-    pub name_index: HashMap<Inode, HashMap<String, Inode>>,
+    pub inodes: FxHashMap<Inode, Metadata>,
+    pub children: FxHashMap<Inode, Vec<Inode>>,
+    pub name_index: FxHashMap<Inode, FxHashMap<String, Inode>>,
 }
 
 impl LayerM {
@@ -68,9 +68,9 @@ impl LayerM {
         let mut layer = Self {
             backend_root: backend_root.as_ref().to_path_buf(),
             next_ino: AtomicU64::new(ROOT_INODE),
-            inodes: HashMap::new(),
-            children: HashMap::new(),
-            name_index: HashMap::new(),
+            inodes: FxHashMap::default(),
+            children: FxHashMap::default(),
+            name_index: FxHashMap::default(),
         };
 
         layer.scan_backend()?;
@@ -103,7 +103,7 @@ impl LayerM {
         self.children.insert(ROOT_INODE, Vec::new());
         self.next_ino.store(ROOT_INODE + 1, Ordering::SeqCst);
 
-        let mut path_to_ino: HashMap<PathBuf, Inode> = HashMap::new();
+        let mut path_to_ino: FxHashMap<PathBuf, Inode> = FxHashMap::default();
         path_to_ino.insert(self.backend_root.clone(), ROOT_INODE);
 
         // We use jwalk which parallelizes the walk and prevents explicit stats!

@@ -12,6 +12,8 @@ pub type Inode = u64;
 pub const ROOT_INODE: Inode = 1;
 pub const FETCH_BATCH_SIZE: usize = 512;
 
+/// Layer M: Backend Metadata Index
+/// Scans the backend and tracks inode metadata with lazy stat loading.
 #[derive(Debug, Clone)]
 pub struct Metadata {
     pub ino: Inode,
@@ -55,8 +57,11 @@ impl Metadata {
     }
 }
 
+/// Layer M: Backend Inode Catalog
+/// Provides inode lookup, directory structure, and lazy stat fetch support.
 pub struct LayerM {
     pub backend_root: PathBuf,
+    // Monotonic inode allocator for the in-memory index.
     next_ino: AtomicU64,
     pub inodes: FxHashMap<Inode, Metadata>,
     pub children: FxHashMap<Inode, Vec<Inode>>,
@@ -205,6 +210,7 @@ impl LayerM {
             .copied()
     }
 
+    /// Background stat fetch for entries discovered without metadata.
     pub fn start_background_fetch(shared: Arc<RwLock<LayerM>>) {
         std::thread::spawn(move || {
             let start = std::time::Instant::now();

@@ -1,5 +1,4 @@
 mod fuse;
-pub mod layer_m;
 pub mod layers;
 use clap::Parser;
 use fuser::MountOption;
@@ -37,8 +36,8 @@ async fn main() -> anyhow::Result<()> {
 
     let options = vec![MountOption::FSName("mantle".to_string())];
 
-    let layer_m = std::sync::Arc::new(parking_lot::RwLock::new(layer_m::LayerM::new(&cli.source)?));
-    layer_m::LayerM::start_background_fetch(layer_m.clone());
+    let layer_m = std::sync::Arc::new(parking_lot::RwLock::new(layers::LayerM::new(&cli.source)?));
+    layers::LayerM::start_background_fetch(layer_m.clone());
 
     let overlay = std::sync::Arc::new(layers::MantleOverlay::new());
 

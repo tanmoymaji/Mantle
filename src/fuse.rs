@@ -1,5 +1,4 @@
-use crate::layer_m::LayerM;
-use crate::layers::MantleOverlay;
+use crate::layers::{LayerM, MantleOverlay};
 use fuser::{Filesystem, ReplyAttr, ReplyDirectory, ReplyEntry, Request};
 use libc::ENOENT;
 use parking_lot::RwLock;

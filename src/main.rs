@@ -1,5 +1,6 @@
 mod fuse;
-mod layer_m;
+pub mod layer_m;
+pub mod layers;
 use clap::Parser;
 use fuser::MountOption;
 use log::info;
@@ -39,7 +40,9 @@ async fn main() -> anyhow::Result<()> {
     let layer_m = std::sync::Arc::new(parking_lot::RwLock::new(layer_m::LayerM::new(&cli.source)?));
     layer_m::LayerM::start_background_fetch(layer_m.clone());
 
-    let fs = fuse::MantleFS::new(layer_m);
+    let overlay = std::sync::Arc::new(layers::MantleOverlay::new());
+
+    let fs = fuse::MantleFS::new(layer_m.clone(), overlay.clone());
 
     let _session = fuser::spawn_mount2(fs, &cli.mountpoint, &options)?;
 

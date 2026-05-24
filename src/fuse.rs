@@ -1,4 +1,5 @@
 use crate::layer_m::LayerM;
+use crate::layers::MantleOverlay;
 use fuser::{Filesystem, ReplyAttr, ReplyDirectory, ReplyEntry, Request};
 use libc::ENOENT;
 use parking_lot::RwLock;
@@ -10,11 +11,12 @@ const TTL: Duration = Duration::from_secs(1);
 
 pub struct MantleFS {
     layer_m: Arc<RwLock<LayerM>>,
+    overlay: Arc<MantleOverlay>,
 }
 
 impl MantleFS {
-    pub fn new(layer_m: Arc<RwLock<LayerM>>) -> Self {
-        MantleFS { layer_m }
+    pub fn new(layer_m: Arc<RwLock<LayerM>>, overlay: Arc<MantleOverlay>) -> Self {
+        MantleFS { layer_m, overlay }
     }
 
     fn ensure_stat_fetched(&self, ino: u64) {
@@ -55,6 +57,12 @@ impl Filesystem for MantleFS {
         };
 
         if let Some(ino) = ino_opt {
+            // Check Layer T: If it's tombstoned, pretend it doesn't exist
+            if self.overlay.layer_t.read().is_tombstoned(ino) {
+                reply.error(ENOENT);
+                return;
+            }
+
             self.ensure_stat_fetched(ino);
             let layer = self.layer_m.read();
             if let Some(meta) = layer.get_metadata(ino) {
@@ -66,6 +74,12 @@ impl Filesystem for MantleFS {
     }
 
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
+        // Check Layer T first
+        if self.overlay.layer_t.read().is_tombstoned(ino) {
+            reply.error(ENOENT);
+            return;
+        }
+
         self.ensure_stat_fetched(ino);
         let layer = self.layer_m.read();
         if let Some(meta) = layer.get_metadata(ino) {
@@ -103,6 +117,11 @@ impl Filesystem for MantleFS {
                 let entry_offset = (i + 3) as i64;
                 if entry_offset <= offset {
                     continue; // Skip already returned entries
+                }
+
+                // Skip tombstoned children
+                if self.overlay.layer_t.read().is_tombstoned(child_ino) {
+                    continue;
                 }
 
                 if let Some(child_meta) = layer.get_metadata(child_ino) {

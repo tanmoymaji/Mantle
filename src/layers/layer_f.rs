@@ -3,6 +3,8 @@ use fuser::FileType;
 use rustc_hash::FxHashMap;
 use std::time::SystemTime;
 
+use std::collections::BTreeMap;
+
 pub struct NewInodeMeta {
     pub name: String,
     pub parent: u64,
@@ -17,9 +19,10 @@ pub struct NewInodeMeta {
 /// Tracks completely new files and directories that do not exist in the backend.
 pub struct LayerF {
     pub inodes: FxHashMap<u64, NewInodeMeta>,
-    pub children: FxHashMap<u64, Vec<u64>>,
+    pub children: FxHashMap<u64, BTreeMap<i64, u64>>,
     pub file_extents: FxHashMap<u64, Vec<Extent>>,
     next_ino: u64,
+    next_offset: i64,
 }
 
 impl LayerF {
@@ -29,6 +32,7 @@ impl LayerF {
             children: FxHashMap::default(),
             file_extents: FxHashMap::default(),
             next_ino: start_ino,
+            next_offset: 1_000_000_000_000_000_000,
         }
     }
 
@@ -36,5 +40,29 @@ impl LayerF {
         let ino = self.next_ino;
         self.next_ino += 1;
         ino
+    }
+
+    pub fn add_child(&mut self, parent: u64, child: u64) {
+        let offset = self.next_offset;
+        self.next_offset += 1;
+        self.children
+            .entry(parent)
+            .or_default()
+            .insert(offset, child);
+    }
+
+    pub fn remove_child(&mut self, parent: u64, child: u64) {
+        if let Some(children) = self.children.get_mut(&parent) {
+            let mut key_to_remove = None;
+            for (&offset, &ino) in children.iter() {
+                if ino == child {
+                    key_to_remove = Some(offset);
+                    break;
+                }
+            }
+            if let Some(key) = key_to_remove {
+                children.remove(&key);
+            }
+        }
     }
 }

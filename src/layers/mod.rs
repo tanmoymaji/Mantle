@@ -4,6 +4,7 @@ pub mod layer_c;
 pub mod layer_d;
 pub mod layer_f;
 pub mod layer_m;
+pub mod layer_s;
 pub mod layer_t;
 pub mod overlay;
 

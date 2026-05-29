@@ -3,10 +3,12 @@ use jwalk::WalkDir;
 use log::{info, warn};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::os::unix::fs::MetadataExt;
 
 pub type Inode = u64;
 pub const ROOT_INODE: Inode = 1;
@@ -18,12 +20,15 @@ pub const FETCH_BATCH_SIZE: usize = 512;
 pub struct Metadata {
     pub ino: Inode,
     pub parent: Inode,
-    pub name: String,
+    pub name: OsString,
     pub kind: FileType,
     pub size: u64,
     pub mtime: SystemTime,
     pub atime: SystemTime,
     pub ctime: SystemTime,
+    pub mode: u32,
+    pub uid: u32,
+    pub gid: u32,
     pub stat_fetched: bool, // Flag to enable lazy loading
 }
 
@@ -38,18 +43,14 @@ impl Metadata {
             ctime: self.ctime,
             crtime: self.ctime,
             kind: self.kind,
-            perm: if self.kind == FileType::Directory {
-                0o755
-            } else {
-                0o644
-            },
+            perm: (self.mode & 0o7777) as u16,
             nlink: if self.kind == FileType::Directory {
                 2
             } else {
                 1
             },
-            uid: unsafe { libc::getuid() },
-            gid: unsafe { libc::getgid() },
+            uid: self.uid,
+            gid: self.gid,
             rdev: 0,
             flags: 0,
             blksize: 4096,
@@ -65,7 +66,7 @@ pub struct LayerM {
     next_ino: AtomicU64,
     pub inodes: FxHashMap<Inode, Metadata>,
     pub children: FxHashMap<Inode, Vec<Inode>>,
-    pub name_index: FxHashMap<Inode, FxHashMap<String, Inode>>,
+    pub name_index: FxHashMap<Inode, FxHashMap<OsString, Inode>>,
 }
 
 impl LayerM {
@@ -96,12 +97,15 @@ impl LayerM {
         let root_meta = Metadata {
             ino: ROOT_INODE,
             parent: ROOT_INODE,
-            name: "".to_string(),
+            name: OsString::from(""),
             kind: FileType::Directory,
             size: 4096, // Just a default size for dir
             mtime: SystemTime::now(),
             atime: SystemTime::now(),
             ctime: SystemTime::now(),
+            mode: 0o755,
+            uid: unsafe { libc::getuid() },
+            gid: unsafe { libc::getgid() },
             stat_fetched: true,
         };
         self.inodes.insert(ROOT_INODE, root_meta);
@@ -151,12 +155,15 @@ impl LayerM {
             let meta = Metadata {
                 ino,
                 parent: parent_ino,
-                name: entry.file_name().to_string_lossy().to_string(),
+                name: entry.file_name().to_os_string(),
                 kind,
                 size: if kind == FileType::Directory { 4096 } else { 0 },
                 mtime: UNIX_EPOCH,
                 atime: UNIX_EPOCH,
                 ctime: UNIX_EPOCH,
+                mode: if kind == FileType::Directory { 0o755 } else { 0o644 },
+                uid: unsafe { libc::getuid() },
+                gid: unsafe { libc::getgid() },
                 stat_fetched: false,
             };
 
@@ -203,7 +210,7 @@ impl LayerM {
         path
     }
 
-    pub fn lookup_ino(&self, parent: Inode, name: &str) -> Option<Inode> {
+    pub fn lookup_ino(&self, parent: Inode, name: &OsStr) -> Option<Inode> {
         self.name_index
             .get(&parent)
             .and_then(|m| m.get(name))
@@ -265,7 +272,10 @@ impl LayerM {
                             meta.size = fs_meta.len();
                             meta.mtime = fs_meta.modified().unwrap_or(UNIX_EPOCH);
                             meta.atime = fs_meta.accessed().unwrap_or(UNIX_EPOCH);
-                            meta.ctime = fs_meta.created().unwrap_or(meta.mtime);
+                            meta.ctime = UNIX_EPOCH + std::time::Duration::new(fs_meta.ctime().max(0) as u64, fs_meta.ctime_nsec().clamp(0, 999_999_999) as u32);
+                            meta.mode = fs_meta.mode();
+                            meta.uid = fs_meta.uid();
+                            meta.gid = fs_meta.gid();
                             meta.stat_fetched = true;
                         }
                     }

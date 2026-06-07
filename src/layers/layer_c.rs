@@ -12,7 +12,7 @@ pub struct LayerC {
 #[derive(Debug, Clone)]
 pub struct CacheBlockMeta {
     pub ref_count: u64,
-    pub length: u64,
+    pub data: Vec<u8>,
 }
 
 impl LayerC {
@@ -23,16 +23,22 @@ impl LayerC {
         }
     }
 
-    pub fn allocate_block(&mut self, length: u64) -> u64 {
+    pub fn write_block(&mut self, data: Vec<u8>) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.blocks.insert(
-            id,
-            CacheBlockMeta {
-                ref_count: 1,
-                length,
-            },
-        );
+        self.blocks
+            .insert(id, CacheBlockMeta { ref_count: 1, data });
         id
+    }
+
+    pub fn read_block(&self, cache_id: u64, offset: u64, length: usize) -> Option<Vec<u8>> {
+        if let Some(meta) = self.blocks.get(&cache_id) {
+            let start = offset as usize;
+            let end = (start + length).min(meta.data.len());
+            if start <= end {
+                return Some(meta.data[start..end].to_vec());
+            }
+        }
+        None
     }
 
     pub fn increment_ref(&mut self, cache_id: u64) {

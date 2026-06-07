@@ -70,7 +70,11 @@ impl MantleFS {
                     meta.size = fs_meta.len();
                     meta.mtime = fs_meta.modified().unwrap_or(UNIX_EPOCH);
                     meta.atime = fs_meta.accessed().unwrap_or(UNIX_EPOCH);
-                    meta.ctime = UNIX_EPOCH + std::time::Duration::new(fs_meta.ctime().max(0) as u64, fs_meta.ctime_nsec().clamp(0, 999_999_999) as u32);
+                    meta.ctime = UNIX_EPOCH
+                        + std::time::Duration::new(
+                            fs_meta.ctime().max(0) as u64,
+                            fs_meta.ctime_nsec().clamp(0, 999_999_999) as u32,
+                        );
                     meta.mode = fs_meta.mode();
                     meta.uid = fs_meta.uid();
                     meta.gid = fs_meta.gid();
@@ -106,7 +110,11 @@ impl MantleFS {
 
     pub(crate) fn resolve_backend_parent(&self, ino: u64) -> u64 {
         let layer_d = self.overlay.layer_d.read();
-        layer_d.directory_redirects.get(&ino).copied().unwrap_or(ino)
+        layer_d
+            .directory_redirects
+            .get(&ino)
+            .copied()
+            .unwrap_or(ino)
     }
 
     pub(crate) fn get_merged_backend_attr(&self, ino: u64) -> Option<fuser::FileAttr> {
@@ -181,11 +189,28 @@ impl Filesystem for MantleFS {
         ops::readdir::readdir(self, req, ino, fh, offset, reply);
     }
 
-    fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, umask: u32, reply: ReplyEntry) {
+    fn mkdir(
+        &mut self,
+        req: &Request,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        umask: u32,
+        reply: ReplyEntry,
+    ) {
         ops::mkdir::mkdir(self, req, parent, name, mode, umask, reply);
     }
 
-    fn create(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, umask: u32, flags: i32, reply: fuser::ReplyCreate) {
+    fn create(
+        &mut self,
+        req: &Request,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        umask: u32,
+        flags: i32,
+        reply: fuser::ReplyCreate,
+    ) {
         ops::create::create(self, req, parent, name, mode, umask, flags, reply);
     }
 
@@ -195,6 +220,46 @@ impl Filesystem for MantleFS {
 
     fn rmdir(&mut self, req: &Request, parent: u64, name: &OsStr, reply: fuser::ReplyEmpty) {
         ops::rmdir::rmdir(self, req, parent, name, reply);
+    }
+
+    fn read(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        size: u32,
+        flags: i32,
+        lock_owner: Option<u64>,
+        reply: fuser::ReplyData,
+    ) {
+        ops::read::read(self, req, ino, fh, offset, size, flags, lock_owner, reply);
+    }
+
+    fn write(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        data: &[u8],
+        write_flags: u32,
+        flags: i32,
+        lock_owner: Option<u64>,
+        reply: fuser::ReplyWrite,
+    ) {
+        ops::write::write(
+            self,
+            req,
+            ino,
+            fh,
+            offset,
+            data,
+            write_flags,
+            flags,
+            lock_owner,
+            reply,
+        );
     }
 
     fn setattr(
@@ -216,7 +281,8 @@ impl Filesystem for MantleFS {
         reply: ReplyAttr,
     ) {
         ops::setattr::setattr(
-            self, req, ino, mode, uid, gid, size, atime, mtime, ctime, fh, crtime, chgtime, bkuptime, flags, reply,
+            self, req, ino, mode, uid, gid, size, atime, mtime, ctime, fh, crtime, chgtime,
+            bkuptime, flags, reply,
         );
     }
 

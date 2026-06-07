@@ -1,16 +1,16 @@
-use crate::layers::extent::Extent;
+use crate::layers::extent::ExtentList;
 use rustc_hash::FxHashMap;
 
 /// Layer D: Dependency Graph
 /// Tracks backend files that have been modified (overwritten, appended, or partially copied).
 pub struct LayerD {
-    // Maps backend Inode to its updated list of extents (for in-place writes)
-    pub modified_extents: FxHashMap<u64, Vec<Extent>>,
+    /// Maps backend Inode to its updated list of extents (for in-place writes)
+    pub modified_extents: FxHashMap<u64, ExtentList>,
 
-    // Maps Layer F Inode to the Backend Extents it depends on (for moved/copied files)
-    pub dependencies: FxHashMap<u64, Vec<Extent>>,
+    /// Maps Layer F Inode to the Backend Extents it depends on (for moved/copied files)
+    pub dependencies: FxHashMap<u64, ExtentList>,
 
-    // Maps Layer F Directory Inode to Backend Directory Inode (for renamed directories)
+    /// Maps Layer F Directory Inode to Backend Directory Inode (for renamed directories)
     pub directory_redirects: FxHashMap<u64, u64>,
 }
 
@@ -26,7 +26,7 @@ impl LayerD {
     /// Adds a dependency mapping from a new Layer F inode to backend extents.
     /// **Invariant:** `layer_f_ino` MUST be an inode in `Layer F` (not `Layer M`).
     /// The `extents` MUST map to valid regions in backend files (`Layer M`).
-    pub fn add_dependency(&mut self, layer_f_ino: u64, extents: Vec<Extent>) {
+    pub fn add_dependency(&mut self, layer_f_ino: u64, extents: ExtentList) {
         self.dependencies.insert(layer_f_ino, extents);
     }
 

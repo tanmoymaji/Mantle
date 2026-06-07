@@ -1,9 +1,11 @@
-pub mod lookup;
-pub mod getattr;
-pub mod readdir;
-pub mod mkdir;
 pub mod create;
-pub mod unlink;
+pub mod getattr;
+pub mod lookup;
+pub mod mkdir;
+pub mod read;
+pub mod readdir;
+pub mod rename;
 pub mod rmdir;
 pub mod setattr;
-pub mod rename;
+pub mod unlink;
+pub mod write;

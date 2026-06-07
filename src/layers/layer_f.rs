@@ -1,4 +1,3 @@
-use crate::layers::extent::Extent;
 use fuser::FileType;
 use rustc_hash::FxHashMap;
 use std::time::SystemTime;
@@ -25,7 +24,7 @@ pub struct LayerF {
     pub inodes: FxHashMap<u64, NewInodeMeta>,
     pub children: FxHashMap<u64, BTreeMap<i64, u64>>,
     pub name_index: FxHashMap<u64, FxHashMap<OsString, u64>>,
-    pub file_extents: FxHashMap<u64, Vec<Extent>>,
+    pub file_extents: FxHashMap<u64, crate::layers::extent::ExtentList>,
     next_ino: u64,
     next_offset: i64,
 }

@@ -9,5 +9,6 @@ pub mod layer_t;
 pub mod overlay;
 
 pub use extent::Extent;
+pub use layer_c::LayerC;
 pub use layer_m::LayerM;
 pub use overlay::MantleOverlay;

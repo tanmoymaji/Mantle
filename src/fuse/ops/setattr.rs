@@ -1,8 +1,8 @@
+use super::super::{TTL, create_file_attr};
 use crate::fuse::MantleFS;
 use fuser::{ReplyAttr, Request};
 use libc::ENOENT;
 use std::time::SystemTime;
-use super::super::{TTL, create_file_attr};
 
 pub fn setattr(
     fs: &mut MantleFS,
@@ -46,8 +46,12 @@ pub fn setattr(
             if let Some(s) = size {
                 meta.size = s;
                 let sys_now = SystemTime::now();
-                if mtime.is_none() { meta.mtime = sys_now; }
-                if ctime.is_none() { meta.ctime = sys_now; }
+                if mtime.is_none() {
+                    meta.mtime = sys_now;
+                }
+                if ctime.is_none() {
+                    meta.ctime = sys_now;
+                }
             }
             if let Some(m) = mode {
                 meta.mode = m & 0o7777;
@@ -60,24 +64,42 @@ pub fn setattr(
             }
 
             attr = Some(create_file_attr(
-                ino, meta.size, meta.kind, meta.mtime, meta.ctime, meta.atime,
-                meta.mode as u16, meta.uid, meta.gid,
+                ino,
+                meta.size,
+                meta.kind,
+                meta.mtime,
+                meta.ctime,
+                meta.atime,
+                meta.mode as u16,
+                meta.uid,
+                meta.gid,
             ));
         }
     } // layer_f lock is dropped here
 
-    // Invalidate extents if the file is truncated to 0 bytes, 
-    // to prevent stale data blocks from leaking into future appends.
-    if size == Some(0) {
-        let layer_f = fs.overlay.layer_f.read();
+    let mut ref_actions = Vec::new();
+    if let Some(new_size) = size {
+        let mut layer_f = fs.overlay.layer_f.write();
         if layer_f.inodes.contains_key(&ino) {
-            // If it's in layer_f, remove its extents. We can safely drop read and grab write.
-            drop(layer_f);
-            fs.overlay.layer_f.write().file_extents.remove(&ino);
+            if let Some(extents) = layer_f.file_extents.get_mut(&ino) {
+                ref_actions = extents.truncate_past(new_size);
+            }
         } else {
             drop(layer_f);
-            // For layer_m files backed by Layer S overrides, clear modified extents.
-            fs.overlay.layer_d.write().modified_extents.remove(&ino);
+            if let Some(extents) = fs.overlay.layer_d.write().modified_extents.get_mut(&ino) {
+                ref_actions = extents.truncate_past(new_size);
+            }
+        }
+    }
+
+    if !ref_actions.is_empty() {
+        use crate::layers::extent::RefAction;
+        let mut layer_c = fs.overlay.layer_c.write();
+        for action in ref_actions.drain(..) {
+            match action {
+                RefAction::Increment(id) => layer_c.increment_ref(id),
+                RefAction::Decrement(id) => layer_c.decrement_ref(id),
+            }
         }
     }
 
@@ -86,9 +108,7 @@ pub fn setattr(
         return;
     }
 
-    if fs.overlay.layer_t.read().is_tombstoned(ino)
-        || fs.overlay.layer_a.read().is_deleted(ino)
-    {
+    if fs.overlay.layer_t.read().is_tombstoned(ino) || fs.overlay.layer_a.read().is_deleted(ino) {
         reply.error(ENOENT);
         return;
     }
@@ -126,8 +146,12 @@ pub fn setattr(
             if let Some(s) = size {
                 entry.size = Some(s);
                 let sys_now = SystemTime::now();
-                if mtime.is_none() { entry.mtime = Some(sys_now); }
-                if ctime.is_none() { entry.ctime = Some(sys_now); }
+                if mtime.is_none() {
+                    entry.mtime = Some(sys_now);
+                }
+                if ctime.is_none() {
+                    entry.ctime = Some(sys_now);
+                }
             }
             if let Some(m) = mode {
                 entry.mode = Some(m & 0o7777);
@@ -143,7 +167,20 @@ pub fn setattr(
         if size == Some(0) {
             // Truncating a backend file directly via Layer S.
             // We must clear its modified extents in Layer D.
-            fs.overlay.layer_d.write().modified_extents.remove(&ino);
+            if let Some(mut extents) = fs.overlay.layer_d.write().modified_extents.remove(&ino) {
+                ref_actions.extend(extents.truncate_past(0));
+            }
+        }
+
+        if !ref_actions.is_empty() {
+            use crate::layers::extent::RefAction;
+            let mut layer_c = fs.overlay.layer_c.write();
+            for action in ref_actions {
+                match action {
+                    RefAction::Increment(id) => layer_c.increment_ref(id),
+                    RefAction::Decrement(id) => layer_c.decrement_ref(id),
+                }
+            }
         }
 
         if let Some(attr) = fs.get_merged_backend_attr(ino) {

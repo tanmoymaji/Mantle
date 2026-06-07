@@ -56,7 +56,11 @@ pub fn rename(
 
     {
         let layer_f = fs.overlay.layer_f.read();
-        if let Some(&child_ino) = layer_f.name_index.get(&newparent).and_then(|m| m.get(newname)) {
+        if let Some(&child_ino) = layer_f
+            .name_index
+            .get(&newparent)
+            .and_then(|m| m.get(newname))
+        {
             dest_ino = Some(child_ino);
             dest_is_layer_f = true;
             dest_exists = true;
@@ -163,13 +167,14 @@ pub fn rename(
                     old_gid = g;
                 }
             }
-            
+
             (size, kind, old_mtime, old_atime, old_mode, old_uid, old_gid)
         };
 
         let (new_ino, kind, size) = {
             let mut layer_f = fs.overlay.layer_f.write();
-            let new_ino = layer_f.allocate_inode();
+            // Preserve the original inode number to prevent kernel dcache invalidation errors
+            let new_ino = ino;
 
             let now = SystemTime::now();
             let meta = crate::layers::layer_f::NewInodeMeta {
@@ -194,16 +199,25 @@ pub fn rename(
             let mut layer_d = fs.overlay.layer_d.write();
             layer_d.add_redirect(new_ino, ino);
         } else {
-            use crate::layers::Extent;
+            use crate::layers::extent::{Extent, ExtentList};
             let mut layer_d = fs.overlay.layer_d.write();
             layer_d.add_dependency(
                 new_ino,
-                vec![Extent::Backend {
-                    ino,
-                    offset: 0,
-                    length: size,
-                }],
+                ExtentList {
+                    extents: vec![Extent::Backend {
+                        file_offset: 0,
+                        ino,
+                        offset: 0,
+                        length: size,
+                    }],
+                },
             );
+
+            // Transplant pending modifications so they aren't lost
+            if let Some(modified) = layer_d.modified_extents.remove(&ino) {
+                let mut layer_f = fs.overlay.layer_f.write();
+                layer_f.file_extents.insert(new_ino, modified);
+            }
         }
     }
 
